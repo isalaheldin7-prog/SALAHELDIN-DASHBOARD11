@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Professional Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+--bg:#0a0a0f;
+--card:#111118;
+--border:#1f1f2a;
+--primary:#8b5cf6;
+--green:#10b981;
+--red:#ef4444;
+--text:#ffffff;
+--muted:#9ca3af;
+}
+
+*{box-sizing:border-box}
+body{
+margin:0;
+padding:16px;
+background:var(--bg);
+color:var(--text);
+font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+}
+
+/* ===== MENU ===== */
+.menu-btn{
+width:34px;
+cursor:pointer;
+}
+.menu-btn span{
+display:block;
+height:3px;
+background:var(--text);
+margin:6px 0;
+border-radius:2px;
+}
+
+.sidebar{
+position:fixed;
+top:0;
+right:-280px;
+width:280px;
+height:100%;
+background:var(--card);
+border-left:1px solid var(--border);
+padding:20px;
+transition:.3s;
+z-index:1000;
+}
+.sidebar.active{right:0}
+.sidebar h3{
+margin-top:0;
+color:var(--primary);
+}
+.sidebar a{
+display:block;
+padding:12px 0;
+color:var(--text);
+text-decoration:none;
+border-bottom:1px solid var(--border);
+font-size:14px;
+}
+.sidebar a:hover{color:var(--primary)}
+
+/* ===== TOP ===== */
+.top{
+display:flex;
+justify-content:space-between;
+align-items:center;
+margin-bottom:18px;
+}
+
+/* ===== STATS ===== */
+.stats{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+gap:12px;
+margin-bottom:18px;
+}
+.card{
+background:var(--card);
+border:1px solid var(--border);
+border-radius:14px;
+padding:14px;
+}
+.card span{
+font-size:12px;
+color:var(--muted);
+}
+.card b{
+display:block;
+margin-top:6px;
+font-size:18px;
+}
+
+/* ===== FORM ===== */
+input,select,button{
+width:100%;
+padding:10px;
+margin-top:6px;
+border-radius:8px;
+border:1px solid var(--border);
+background:#0f0f16;
+color:var(--text);
+}
+button{
+background:var(--primary);
+border:none;
+font-weight:bold;
+cursor:pointer;
+}
+
+/* ===== TABLE ===== */
+table{
+width:100%;
+border-collapse:collapse;
+font-size:12px;
+margin-top:10px;
+}
+th,td{
+padding:8px;
+border-bottom:1px solid var(--border);
+text-align:center;
+}
+.profit{color:var(--green)}
+.loss{color:var(--red)}
+
+/* ===== CALENDAR ===== */
+.calendar{
+display:grid;
+grid-template-columns:repeat(7,1fr);
+gap:6px;
+margin-top:10px;
+}
+.day{
+aspect-ratio:1;
+border-radius:6px;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:11px;
+background:#0f0f16;
+border:1px solid var(--border);
+}
+.day.profit{background:rgba(16,185,129,.25)}
+.day.loss{background:rgba(239,68,68,.25)}
+</style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+<h3>القائمة</h3>
+<a>Dashboard</a>
+<a>Trades</a>
+<a>Calendar</a>
+<a>Reports</a>
+<a>Settings</a>
+</div>
+
+<!-- Top -->
+<div class="top">
+<div class="menu-btn" onclick="sidebar.classList.toggle('active')">
+<span></span><span></span><span></span>
+</div>
+<h3>Trading Dashboard</h3>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+<div class="card"><span>صافي الربح</span><b id="net">0</b></div>
+<div class="card"><span>Win Rate</span><b id="wr">0%</b></div>
+<div class="card"><span>Profit Factor</span><b id="pf">0</b></div>
+<div class="card"><span>عدد الصفقات</span><b id="count">0</b></div>
+</div>
+
+<!-- Trade Entry -->
+<div class="card">
+<select id="market">
+<option>Forex</option><option>Crypto</option>
+<option>Stocks</option><option>Futures</option>
+</select>
+<input id="symbol" placeholder="Symbol">
+<select id="type"><option value="buy">Buy</option><option value="sell">Sell</option></select>
+<input id="entry" placeholder="Entry">
+<input id="exit" placeholder="Exit">
+<input id="size" placeholder="Size">
+<button onclick="addTrade()">Add Trade</button>
+</div>
+
+<!-- Calendar -->
+<div class="card">
+<div class="calendar" id="calendar"></div>
+</div>
+
+<!-- Chart -->
+<div class="card">
+<canvas id="chart"></canvas>
+</div>
+
+<!-- Trades -->
+<div class="card">
+<table>
+<thead><tr><th>Market</th><th>Symbol</th><th>P/L</th></tr></thead>
+<tbody id="list"></tbody>
+</table>
+</div>
+
+<script>
+let trades=JSON.parse(localStorage.trades||"[]");
+const calendar=document.getElementById("calendar");
+const ctx=document.getElementById("chart").getContext("2d");
+
+const chart=new Chart(ctx,{
+type:"bar",
+data:{labels:[],datasets:[{data:[],backgroundColor:[]}]},
+options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#fff"}},y:{ticks:{color:"#fff"}}}}
+});
+
+function render(){
+let profit=0,loss=0,wins=0;
+list.innerHTML="";calendar.innerHTML="";
+trades.forEach((t,i)=>{
+t.pnl>=0?(profit+=t.pnl,wins++):(loss+=-t.pnl);
+list.innerHTML+=`<tr class="${t.pnl>=0?'profit':'loss'}"><td>${t.market}</td><td>${t.symbol}</td><td>${t.pnl.toFixed(2)}</td></tr>`;
+const d=document.createElement("div");
+d.className="day "+(t.pnl>=0?"profit":"loss");
+d.textContent=i+1;calendar.appendChild(d);
+});
+count.textContent=trades.length;
+net.textContent=(profit-loss).toFixed(2);
+wr.textContent=trades.length?(wins/trades.length*100).toFixed(1)+"%":"0%";
+pf.textContent=loss?(profit/loss).toFixed(2):profit.toFixed(2);
+
+chart.data.labels=trades.map((_,i)=>i+1);
+chart.data.datasets[0].data=trades.map(t=>t.pnl);
+chart.data.datasets[0].backgroundColor=trades.map(t=>t.pnl>=0?"#10b981":"#ef4444");
+chart.update();
+}
+
+function addTrade(){
+let e=+entry.value,x=+exit.value,s=+size.value;
+if(!e||!x||!s)return;
+let pnl=type.value==="buy"?(x-e)*s:(e-x)*s;
+trades.push({market:market.value,symbol:symbol.value,pnl});
+localStorage.trades=JSON.stringify(trades);
+render();
+}
+
+render();
+</script>
+
+</body>
+  </html>
